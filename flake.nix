@@ -11,13 +11,45 @@
       mkPkgs = system: import nixpkgs { inherit system; overlays = [ self.overlays.default ]; };
     in
     {
+      legacyPackages = forAllSystems (system:
+        let
+          pkgs = mkPkgs system;
+
+          jAddons = pkgs.lib.packagesFromDirectoryRecursive {
+            inherit (pkgs) callPackage newScope;
+            directory = ./src;
+          };
+          buildJEnv = pkgs.callPackage ./j-build-env.nix { };
+        in
+        {
+          inherit (jAddons) jAddons;
+          inherit buildJEnv;
+          jWithAddons = f: buildJEnv.override { addons = f jAddons.jAddons; };
+        }
+      );
+
       packages = forAllSystems (system:
         let
           pkgs = mkPkgs system;
+
+          wrapFHS = j: pkgs.buildFHSEnv {
+            name = "j";
+            targetPkgs = _: [ j ];
+            runScript = pkgs.lib.getExe j;
+          };
+
         in
-        {
-          inherit (pkgs) j j-fhs;
+        rec {
+          inherit (pkgs) j;
           default = pkgs.j;
+          j-fhs = wrapFHS j;
+
+          j-with-addons = self.legacyPackages.${system}.jWithAddons (ps: with ps;
+            [
+              math.misc
+              graphics.plot
+            ]);
+          j-fhs-with-addons = wrapFHS j-with-addons;
         }
       );
 
@@ -27,7 +59,7 @@
         in
         {
           default = pkgs.mkShell {
-            packages = [ pkgs.j-fhs ];
+            packages = [ self.packages.${system}.j-fhs-with-addons ];
           };
         });
 
@@ -43,17 +75,7 @@
             });
         };
 
-        # j built in a FHS environment
-        j-fhs = final: prev: {
-          j-fhs = final.buildFHSEnv {
-            name = "jconsole";
-            targetPkgs = pkgs: [ pkgs.j ];
-            executableName = final.lib.getName final.j;
-            runScript = final.lib.getName final.j;
-          };
-        };
-
-        default = nixpkgs.lib.composeManyExtensions [ j-symlink j-fhs ];
+        default = nixpkgs.lib.composeManyExtensions [ j-symlink ];
       };
     };
 }
