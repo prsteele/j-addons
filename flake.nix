@@ -11,45 +11,25 @@
       mkPkgs = system: import nixpkgs { inherit system; overlays = [ self.overlays.default ]; };
     in
     {
-      legacyPackages = forAllSystems (system:
-        let
-          pkgs = mkPkgs system;
-
-          jAddons = pkgs.lib.packagesFromDirectoryRecursive {
-            inherit (pkgs) callPackage newScope;
-            directory = ./src;
-          };
-          buildJEnv = pkgs.callPackage ./j-build-env.nix { };
-        in
-        {
-          inherit (jAddons) jAddons;
-          inherit buildJEnv;
-          jWithAddons = f: buildJEnv.override { addons = f jAddons.jAddons; };
-        }
-      );
-
       packages = forAllSystems (system:
         let
           pkgs = mkPkgs system;
-
-          wrapFHS = j: pkgs.buildFHSEnv {
-            name = "j";
-            targetPkgs = _: [ j ];
-            runScript = pkgs.lib.getExe j;
-          };
-
         in
-        rec {
+        {
           inherit (pkgs) j;
           default = pkgs.j;
-          j-fhs = wrapFHS j;
+          j-fhs = pkgs.j.wrapFHS pkgs.j;
 
-          j-with-addons = self.legacyPackages.${system}.jWithAddons (ps: with ps;
+          j-with-addons = pkgs.j.withAddons (ps: with ps;
             [
               math.misc
               graphics.plot
             ]);
-          j-fhs-with-addons = wrapFHS j-with-addons;
+          j-fhs-with-addons = pkgs.j.wrapFHS (pkgs.j.withAddons (ps: with ps;
+            [
+              math.misc
+              graphics.plot
+            ]));
         }
       );
 
@@ -75,7 +55,30 @@
             });
         };
 
-        default = nixpkgs.lib.composeManyExtensions [ j-symlink ];
+        # j with addon helpers attached
+        j-with-addons = final: prev:
+          let
+            pkgs = mkPkgs final.stdenv.hostPlatform.system;
+            _jAddons = pkgs.lib.packagesFromDirectoryRecursive {
+              inherit (pkgs) callPackage newScope;
+              directory = ./src;
+            };
+            buildJEnv = pkgs.callPackage ./j-build-env.nix { };
+          in
+          {
+            j = prev.j // {
+              inherit buildJEnv;
+              jAddons = _jAddons.jAddons;
+              wrapFHS = j: pkgs.buildFHSEnv {
+                name = "j";
+                targetPkgs = _: [ j ];
+                runScript = pkgs.lib.getExe j;
+              };
+              withAddons = f: buildJEnv.override { addons = f _jAddons.jAddons; };
+            };
+          };
+
+        default = nixpkgs.lib.composeManyExtensions [ j-symlink j-with-addons ];
       };
     };
 }
