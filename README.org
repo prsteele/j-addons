@@ -1,0 +1,31 @@
+* J Addons
+
+This repository defines a Nix flake supporting J with addons.
+
+** Quick start
+
+Add this flake to your flake inputs, apply the default overlay, and
+use the ~j.withAddons~ function to choose your addons.
+
+#+begin_src nix
+  {
+    description = "Sample flake with j";
+    inputs = {
+      nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+      j-addons.url = "github:prsteele/j-addons";
+    };
+    outputs = { self, nixpkgs, j-addons }: {
+      devShells.x86_64-linux.default =
+        let
+          pkgs = import nixpkgs { system = "x86_64-linux"; overlays = [ j-addons.overlays.default ]; };
+          j = pkgs.j.withAddons (ps: [ ps.graphics.plot ps.math.misc ]);
+        in
+        pkgs.mkShell { packages = [ j ]; };
+    };
+  }
+#+end_src
+
+** Adding more addons
+
+This flake exposes the ~j.jAddons.buildJAddon~ function; see any
+of the addons [[file:src/jAddons/][here]] for examples.
